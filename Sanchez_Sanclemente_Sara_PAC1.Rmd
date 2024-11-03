@@ -1,0 +1,185 @@
+---
+title: "Anàlisi de dades òmiques: PAC1"
+author: "Sara Sánchez Sanclemente"
+date: "Novembre, 2024"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true     
+    toc_depth: 4   
+---
+
+\newpage
+## Introducció i objectius
+
+L'objectiu d'aquest projecte és realitzar una anàlisi de dades metabolòmiques mitjançant un conjunt de dades obtingut d'un repositori en línia, en aquest cas $GitHub$. Un cop descarregades les dades, crearem un contenidor de tipus $SummarizedExperiment$ que inclogui tant les dades com les metadades associades al conjunt, com ara informació sobre les files i les columnes. A continuació, portarem a terme una exploració exhaustiva del dataset per obtenir una visió general dels resultats.
+
+Per a fer aquest estudi, s'ha triat la base de dades $human_cachexia.csv$, del repositori de dades $GitHub$ que és un recurs reconegut i àmpliament utilitzat en diversos tutorials de MetaboAnalyst. La base de dades ha superat la comprovació de coherència, amb la particularitat que les mostres no estan emparellades i s’han identificat un total de 2 grups entre les mostres. A més, tots els valors continguts en les dades són numèrics, i no s’han detectat valors perduts.
+
+\newpage
+
+## Importació i lectura de les dades
+
+En aquesta secció, descriuré el procés d'importació i lectura del conjunt de dades seleccionat. Utilitzaré diverses funcions de R per descarregar les dades des del repositori escollit, assegurant-me que es mantinguin els formats adequats.Això permetrà preparar les dades per a l'exploració i l'anàlisi posterior, així com revisar les metadades associades.  
+
+En primer lloc cridem el paquet SummarizedExperiment i si no etsà instal·lat, l'instal·lem.
+```{r,warning=FALSE,message=FALSE}
+if (!requireNamespace("SummarizedExperiment", quietly = TRUE)) {
+  install.packages("BiocManager")
+  BiocManager::install("SummarizedExperiment")
+}
+library(SummarizedExperiment)
+```
+
+Carreguem les dades seleccionades, mostrem una primera visualització i un resum de les variables:
+```{r,warning=FALSE,message=FALSE}
+dades <- read.csv("C:/Users/saruc/Desktop/master bioest i bionifo/dades_omiques/PAC1/pec1/human_cachexia.csv")
+head(dades)
+#summary(dades)
+```
+
+La base de dades conté 77 files (observacions) i 65 columnes (variables). Les columnes inclouen una identificació de pacient (Patient ID), la condició de pèrdua muscular (Muscle loss), i diverses variables quantitatives sobre metabòlits.  
+
+\newpage
+## Creació de l'objecte $SummarizedExperiment$
+
+Ara, per crear el contenidor SummarizedExperiment, seguirem aquests passos:  
+
+- Dades: Guardarem les variables quantitatives (metabòlits) com a matriu de dades.  
+- Metadades: Inclourem informació sobre cada pacient i sobre cada columna del dadesset.  
+```{r,warning=FALSE,message=FALSE}
+
+#Extraiem la matriu de dades metabòliques
+mat<- as.matrix(dades[, 3:ncol(dades)])  
+#comencen a la tercera columna (id i muscle.loss no ho son)
+
+# Definim les dades de les files (metadades de mostres)
+files <- data.frame(PatientID = dades$Patient.ID, MuscleLoss = dades$Muscle.loss)
+
+# Creem l'objecte SummarizedExperiment (se)
+se <- SummarizedExperiment(
+    assays = list(matriu = mat),
+    rowData = files,
+    colData = DataFrame(Metabolit = colnames(mat))
+)
+
+se
+
+save(se, file = "objecte_se.Rda")
+save(mat,file = "metadades.Rmd")
+
+```
+
+L'objecte $SummarizedExperiment$ conté dades de 77 mostres i 63 metabòlits en una matriu que emmagatzema les mesures de concentració de cada metabòlit per mostra. L’objecte no inclou metadades generals, però sí que disposa d'informació específica sobre les files i les columnes. Concretament, les files (mostres) tenen dues metadades (rowData): PatientID, que identifica el pacient, i MuscleLoss, que indica si el pacient presenta caquèxia. Les columnes representen 63 noms de metabòlits agrupats en una única variable (colData) anomenada Metabolit.
+
+\newpage
+## Exploració de les dades 
+
+En aquesta secció, realitzaré una anàlisi exploratòria del conjunt de dades fent servir l'objecte $se$ creat abans, on presentaré un resum de mesures estadístiques i histogrames per oferir una visualització gràfica clara de les dades. També exploraré el disseny de l'estudi, que es divideix en dos grups segons la condició de pèrdua muscular: el grup control i el grup cachexic. A través de comparacions de boxplots per a cada variable, podrem observar les diferències entre els dos grups, la qual cosa ens permetrà obtenir conclusions sobre l'impacte de la caquexia en les mesures metabolomiques. 
+
+### Anàlisi exploratòria de les dades   
+
+S’ha calculat un resum estadístic per a cada variable, obtenint valors com la mitjana, la mediana, el rang interquartílic i els valors mínim i màxim.
+
+```{r}
+#Anàlisi estadístic
+summary(assay(se))
+```
+Podem observar com alguns metabòlits presenten concentracions especialment elevades en certs casos (com el lactat i l’hipurat), cosa que podria suggerir un augment associat amb l’estat caquèctic.  
+
+<br>  
+
+Per altra banda, s’han generat histogrames per a cada metabòlit, proporcionant una representació gràfica de la distribució de les concentracions
+
+```{r,warning=FALSE,message=FALSE}
+#Anàlisi gràfic (histogrames)
+library(reshape2)
+library(gridExtra)
+library(ggplot2)
+
+# Convertim la matriu a un data frame i ho formatejem
+exprs_df <- as.data.frame(assay(se))
+melted_df <- melt(exprs_df)
+
+# Creem els histogrames
+plots <- lapply(unique(melted_df$variable), function(var) {
+    ggplot(melted_df[melted_df$variable == var, ], aes(x = value)) +
+        geom_histogram(bins = 9,fill="darkolivegreen4",alpha = 0.7) + 
+        labs(title = var, x = "Valor", y = "Freqüència") +
+        theme_minimal() +
+        theme(
+            plot.title = element_text(size = 10),
+            axis.title = element_text(size = 8),
+            axis.text = element_text(size = 8)
+        )
+})
+
+# Mostrem els grafics en grups de 9 (per a que es vegin be i no ocupin molt)
+for (i in seq(1, length(plots), by = 9)) {
+    grid.arrange(grobs = plots[i:min(i + 8, length(plots))], ncol = 3)  
+}
+```
+La majoria de metabòlits mostren distribucions esbiaixades, amb una acumulació de valors en l’extrem inferior i alguns valors extremadament alts. Això és habitual en dades metabolòmiques.  
+
+
+### Exploració del disseny d'estudi  
+
+Aquest estudi segueix un disseny comparatiu entre dos grups: un grup de pacients caquèctics i un grup control. Aquest tipus d'estudi és útil per identificar possibles diferències metabolòmiques associades amb la caquèxia, ja que permet comparar directament els perfils metabòlics entre individus amb aquesta condició i individus sense alteracions metabòliques relacionades.  
+
+Per explorar les diferències entre grups, s’han creat diagrames de caixes (boxplots) per a cada metabòlit, classificats per grup (control i caquèctic).
+```{r,warning=FALSE,message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+
+# Taula de distribució de la variable MuscleLoss
+table(rowData(se)$MuscleLoss)
+
+variables_metaboliques <- 
+  colnames(dades)[!colnames(dades) %in% c("Patient.ID", "Muscle.loss")]
+
+plots <- list()  #llista grafic
+
+for (variable in variables_metaboliques) {
+    graf <- ggplot(dades, aes(x = Muscle.loss,y = .data[[variable]],fill=Muscle.loss)) +
+        geom_boxplot() +
+        labs(title = paste( variable ),
+             x = "Grup (Muscle.loss)",
+             y = variable) +
+        theme_minimal() +
+        theme(legend.position = "none")+
+        scale_fill_manual(values = c("control" = "lightblue", "cachexic" = "lightcoral")) +
+        theme(plot.title = element_text(hjust = 0.5, size = 10), #ajustar tamany lletra
+              axis.title.x = element_text(size = 5), 
+              axis.title.y = element_text(size = 5),
+              axis.text.x = element_text(size = 5), 
+              axis.text.y = element_text(size = 5)) 
+    plots[[variable]] <- graf #guadem els grafics a la llista
+}
+
+# mostrem els gràfics en grups de 9
+for (i in seq(1, length(plots), by = 9)) {
+    grid.arrange(grobs = plots[i:min(i + 8, length(plots))], ncol = 3)  
+}
+
+```
+En molts casos, les medians dels metabòlits difereixen entre els dos grups, cosa que suggereix que l’estat caquèctic pot estar associat amb canvis en el perfil metabolòmic. Alguns metabòlits presenten una diferència estadísticament significativa entre grups, fet que podria indicar una relació amb la condició de caquèxia.  
+
+\newpage
+
+## Resultats i conclusions
+
+L'exploració de les dades i l'anàlisi dels boxplots revelen patrons significatius en la concentració de metabòlits entre el grup control i el grup caquèctic. Els resultats clau inclouen:
+
+1. S’ha observat un increment en la concentració de diversos metabòlits com el lactat i l’hipurat en el grup caquèctic, patró que pot indicar una resposta metabòlica a la caquèxia.  
+
+2. Alguns metabòlits, com certs àcids orgànics, mostren una tendència a la baixa en el grup caquèctic, la qual cosa podria suggerir una alteració en els processos catabòlics.  
+
+3. En diversos metabòlits s’observa una gran dispersió de valors, especialment en el grup caquèctic, fet que podria estar relacionat amb l’heterogeneïtat de les respostes individuals a la condició de caquèxia.  
+
+Per tant, els resultats indiquen que la caquèxia podria estar associada amb canvis en el perfil metabòlic dels pacients. Aquests canvis podrien ajudar a trobar biomarcadors, és a dir, senyals en el cos que indiquen la presència o la progressió de la caquèxia. A més, estudiar aquestes diferències ens permet entendre millor com afecta la caquèxia al metabolisme dels pacients.  
+
+<br>  
+
+L'**URL** del repositori de Github que conté aquest informe, l'objecte contenidor amb les dades i les metadades en format binari de R (arxiu amb extensió . Rda), el codi R per a l' exploració de les dades, les dades en format text i les metadades sobre el dataset en un arxiu markdown és:  
+**https://github.com/ssanchezsancl/Sanchez-Sanclemente-Sara-PEC1.git**
